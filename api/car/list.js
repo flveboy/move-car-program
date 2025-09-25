@@ -17,9 +17,11 @@ module.exports = async (req, res) => {
 
   // 找到车主
   const owners = await redis.keys('owner:*');
+  console.log('[car/list] 扫描到的 owner 数量:', owners.length);
   let owner = null;
   for (const key of owners) {
     const o = await redis.hgetall(key);
+    console.log('[car/list] owner:', k, 'token:', o.token);
     if (o.token === token) { owner = o; break; }
   }
   if (!owner) return res.status(401).json({ error: '无效的 Token' });
