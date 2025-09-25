@@ -21,7 +21,7 @@ module.exports = async (req, res) => {
   let owner = null;
   for (const key of owners) {
     const o = await redis.hgetall(key);
-    console.log('[car/list] owner:', k, 'token:', o.token);
+    console.log('[car/list] owner:', key, 'token:', o.token);
     if (o.token === token) { owner = o; break; }
   }
   if (!owner) return res.status(401).json({ error: '无效的 Token' });
