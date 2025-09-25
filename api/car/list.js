@@ -8,8 +8,9 @@ const redis = new Redis({
 
 module.exports = async (req, res) => {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
-
+  
   const auth = req.headers.authorization;
+   console.log('[car/list] 收到 token:', req.headers.authorization);
   if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: '未登录' });
 
   const token = auth.replace('Bearer ', '');
