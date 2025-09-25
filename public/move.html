@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>扫码挪车服务</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+  <style>
+    /* ====== 完全复用你的 index.html 样式 ====== */
+    *{margin:0;padding:0;box-sizing:border-box;font-family:'PingFang SC','Helvetica Neue',Arial,sans-serif}
+    body{background:linear-gradient(135deg,#1e88e5 0%,#0d47a1 100%);color:#333;min-height:100vh;padding:20px;display:flex;justify-content:center;align-items:center}
+    .container{width:100%;max-width:500px;background:white;border-radius:15px;box-shadow:0 10px 30px rgba(0,0,0,.2);overflow:hidden}
+    header{background:#1565c0;color:white;padding:25px 20px;text-align:center}
+    h1{font-size:24px;font-weight:500;margin-bottom:8px}
+    .description{font-size:14px;opacity:.9}
+    .logo{width:70px;height:70px;margin:0 auto 15px;background:#ff9800;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:35px;color:white}
+    .content{padding:25px 20px}
+    .section{margin-bottom:25px}
+    .section-title{font-size:18px;color:#1565c0;margin-bottom:15px;padding-bottom:8px;border-bottom:2px solid #e3f2fd;display:flex;align-items:center}
+    .section-title i{margin-right:10px;font-size:20px}
+    textarea{width:100%;height:120px;padding:15px;border:1px solid #ddd;border-radius:8px;resize:none;font-size:16px;transition:border-color .3s;margin-bottom:10px}
+    textarea:focus{outline:none;border-color:#2196f3;box-shadow:0 0 0 2px rgba(33,150,243,.2)}
+    .char-count{text-align:right;color:#757575;font-size:14px;margin-bottom:15px}
+    .char-count.warning{color:#f44336}
+    .templates{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px}
+    .template-btn{background:#e3f2fd;border:none;border-radius:20px;padding:8px 16px;cursor:pointer;font-size:14px;color:#1565c0;transition:all .3s}
+    .template-btn:hover{background:#bbdefb;transform:translateY(-2px)}
+    .template-btn.active{background:#1565c0;color:white}
+    .notification-buttons{display:flex;gap:15px;margin-bottom:15px}
+    .call-button-row{display:flex;gap:15px}
+    .btn{flex:1;padding:16px 20px;border:none;border-radius:8px;cursor:pointer;font-size:16px;font-weight:500;transition:all .3s;display:flex;align-items:center;justify-content:center}
+    .btn i{margin-right:8px}
+    .dingtalk-btn{background:#1E88E5;color:white}
+    .dingtalk-btn:hover{background:#1976d2;transform:translateY(-2px);box-shadow:0 4px 8px rgba(33,150,243,.3)}
+    .dingtalk-btn:disabled{background:#90caf9;cursor:not-allowed;transform:none;box-shadow:none}
+    .wecom-btn{background:#1A9E68;color:white}
+    .wecom-btn:hover{background:#0C8C58;transform:translateY(-2px);box-shadow:0 4px 8px rgba(26,158,104,.3)}
+    .wecom-btn:disabled{background:#81C784;cursor:not-allowed;transform:none;box-shadow:none}
+    .call-btn{background:#4caf50;color:white}
+    .call-btn:hover{background:#388e3c;transform:translateY(-2px);box-shadow:0 4px 8px rgba(76,175,80,.3)}
+    .status-message{padding:12px;border-radius:8px;margin-top:15px;text-align:center;font-size:14px;display:none}
+    .success{background:#e8f5e9;color:#2e7d32;display:block}
+    .error{background:#ffebee;color:#c62828;display:block}
+    @media (max-width:480px){.notification-buttons,.call-button-row{flex-direction:column}.btn{width:100%}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo"><i class="fas fa-car"></i></div>
+      <h1>扫码挪车服务</h1>
+      <p class="description">选择通知方式联系车主</p>
+    </header>
+
+    <div class="content" id="mainContent">
+      <div class="loading"><div class="loading-spinner"></div><p>正在加载...</p></div>
+    </div>
+
+    <footer>© 2025 扫码挪车服务 | 码上挪车</footer>
+  </div>
+
+  <script>
+    /* ========== 基础配置 ========== */
+    const templates = {
+      default: '您好，您的车辆需要挪动一下，谢谢！',
+      polite: '尊敬的先生/女士，您好！您的爱车挡住了我的去路，麻烦您挪一下车，非常感谢！',
+      urgent: '紧急挪车通知！您的车辆挡住了紧急通道，请立即前来挪车！',
+      police: '交警来了，赶紧挪车！请立即前来处理，以免被罚款！'
+    };
+    let requestTimestamps = [];
+    const MAX_PER_MINUTE = 10;
+    const uuid = new URLSearchParams(location.search).get('r');
+    if (!uuid) throw new Error('缺少必要参数');
+
+    /* ========== 工具函数 ========== */
+    function showStatus(msg, success = true) {
+      const box = document.getElementById('statusMessage');
+      box.textContent = msg;
+      box.className = success ? 'status-message success' : 'status-message error';
+      box.style.display = 'block';
+      setTimeout(() => box.style.display = 'none', 3000);
+    }
+
+    function checkRateLimit() {
+      const now = Date.now();
+      requestTimestamps = requestTimestamps.filter(t => now - t < 60000);
+      if (requestTimestamps.length >= MAX_PER_MINUTE) {
+        const wait = Math.ceil((requestTimestamps[0] + 60000 - now) / 1000);
+        return { ok: false, msg: `发送频率过高，请等待 ${wait} 秒后再试` };
+      }
+      requestTimestamps.push(now);
+      return { ok: true };
+    }
+
+    function profanityCheck(text) {
+      const list = ['傻逼', '傻比', '操你妈', 'fuck', 'shit'];
+      for (const w of list) if (text.includes(w)) return true;
+      return false;
+    }
+
+    /* ========== 主界面 ========== */
+    function renderMain() {
+      document.getElementById('mainContent').innerHTML = `
+        <div class="section">
+          <div class="section-title"><i class="fas fa-comment-dots"></i>发送挪车通知</div>
+          <textarea id="msgInput" placeholder="请输入通知内容，例如：您好，您的车辆需要挪动一下，谢谢！"></textarea>
+          <div id="charCount" class="char-count">0/200</div>
+          <div class="templates">
+            ${Object.keys(templates).map(k => `<button class="template-btn" data-t="${k}">${k === 'default' ? '默认' : k === 'polite' ? '礼貌' : k === 'urgent' ? '紧急' : '交警'}</button>`).join('')}
+          </div>
+          <div class="notification-buttons">
+            <button id="dingBtn" class="btn dingtalk-btn"><i class="fas fa-paper-plane"></i>发送钉钉通知</button>
+            <button id="weBtn"  class="btn wecom-btn"><i class="fas fa-building"></i>发送企微通知</button>
+          </div>
+          <div class="call-button-row">
+            <button id="callBtn" class="btn call-btn"><i class="fas fa-phone"></i>直接拨打电话</button>
+          </div>
+          <div id="statusMessage" class="status-message"></div>
+        </div>
+      `;
+
+      /* 事件绑定 */
+      const msgInput = document.getElementById('msgInput');
+      msgInput.addEventListener('input', () => {
+        const len = msgInput.value.length;
+        document.getElementById('charCount').textContent = `${len}/200`;
+        document.getElementById('charCount').classList.toggle('warning', len > 200);
+        document.getElementById('dingBtn').disabled = len === 0 || len > 200;
+        document.getElementById('weBtn').disabled  = len === 0 || len > 200;
+      });
+
+      document.querySelectorAll('.template-btn').forEach(btn => {
+        btn.onclick = () => {
+          msgInput.value = templates[btn.dataset.t];
+          msgInput.dispatchEvent(new Event('input'));
+          document.querySelectorAll('.template-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+        };
+      });
+
+      document.getElementById('dingBtn').onclick = () => sendNotify('dingtalk');
+      document.getElementById('weBtn').onclick  = () => sendNotify('wecom');
+      document.getElementById('callBtn').onclick = () => callOwner();
+
+      msgInput.dispatchEvent(new Event('input')); // 初始化
+      document.querySelector('.template-btn').click(); // 默认模板
+    }
+
+    /* ========== 通知发送 ========== */
+    async function sendNotify(type) {
+      const msg = document.getElementById('msgInput').value.trim();
+      if (!msg) return showStatus('请输入通知内容', false);
+      if (msg.length > 200) return showStatus('内容不能超过 200 字', false);
+      if (profanityCheck(msg)) return showStatus('内容包含不当词汇，请修改', false);
+      const rate = checkRateLimit();
+      if (!rate.ok) return showStatus(rate.msg, false);
+
+      const btn = document.getElementById(type === 'dingtalk' ? 'dingBtn' : 'weBtn');
+      btn.disabled = true;
+      btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i>发送中...`;
+
+      try {
+        const res = await fetch('/api/notification', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uuid, message: msg, type })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showStatus(`${type === 'dingtalk' ? '钉钉' : '企微'}通知已发送！车主正在赶来...`, true);
+          btn.innerHTML = `<i class="fas fa-check"></i>发送成功`;
+        } else {
+          showStatus(data.error || '发送失败', false);
+          btn.innerHTML = `<i class="fas fa-times"></i>发送失败`;
+        }
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.innerHTML = type === 'dingtalk' ? '<i class="fas fa-paper-plane"></i>发送钉钉通知' : '<i class="fas fa-building"></i>发送企微通知';
+        }, 2000);
+      } catch (e) {
+        showStatus('网络错误', false);
+        btn.disabled = false;
+        btn.innerHTML = type === 'dingtalk' ? '<i class="fas fa-paper-plane"></i>发送钉钉通知' : '<i class="fas fa-building"></i>发送企微通知';
+      }
+    }
+
+    /* ========== 拨打电话 ========== */
+    async function callOwner() {
+      const rate = checkRateLimit();
+      if (!rate.ok) return showStatus(rate.msg, false);
+      const res = await fetch('/api/notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uuid, message: '拨打电话', type: 'call' })
+      });
+      const data = await res.json();
+      if (res.ok && data.phone) {
+        window.location.href = 'tel:' + data.phone;
+      } else {
+        showStatus(data.error || '车主未预留电话', false);
+      }
+    }
+
+    /* ========== 入口 ========== */
+    (async () => {
+      // 仅验证 UUID 非空即可，后端负责存在性/限流/过期
+      if (!uuid) {
+        document.getElementById('mainContent').innerHTML = `
+          <div class="validation-error">
+            <i class="fas fa-exclamation-circle"></i>
+            <h2>二维码无效</h2>
+            <p>请扫描挪车卡上的二维码重新进入</p>
+            <button class="btn dingtalk-btn" onclick="location.reload()"><i class="fas fa-sync-alt"></i>重新扫码</button>
+          </div>`;
+        return;
+      }
+      renderMain();
+    })();
+  </script>
+</body>
+</html>
