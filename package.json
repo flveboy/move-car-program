@@ -1,3 +1,6 @@
-"dependencies": {
-  "@upstash/redis": "^1.25.1"
+{"name": "car-move-program",
+  "version": "1.0.0",
+    "dependencies": {
+    "@upstash/redis": "^1.25.1"
+  }
 }
